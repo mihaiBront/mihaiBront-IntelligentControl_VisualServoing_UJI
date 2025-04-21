@@ -1,6 +1,0 @@
-{
-  "num_sequences": 1,
-  "creation_date": "2025-04-21 10:53:12",
-  "description": "IBVS dataset for neural network training",
-  "csv_file": "outputs/dataset_sample/ibvs_dataset.csv"
-}
