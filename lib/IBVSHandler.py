@@ -44,7 +44,6 @@ class IBVSHandler():
         y = np.random.uniform(-max_distance, max_distance)
         z = np.random.uniform(-max_distance, -min_distance)
         
-        
         self.central_camera = CentralCamera.Default(pose=SE3.Trans(x, y, z))
         
     def __post_init__(self):
