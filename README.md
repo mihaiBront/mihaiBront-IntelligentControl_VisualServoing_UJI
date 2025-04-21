@@ -23,11 +23,14 @@ The goal is to generate a dataset (for training, validation, and testing) by sim
 ### 2.1 How to run the code:
 
 **Create the python environment, for which:**
+
 a) You must have **python installed**
+
 b) You can either run (from the root directory of the project):
 ``` bash
 source scripts/.prepare_environment.bash
 ```
+
 c) Or run the build task made for preparing the environment (from VSCode):
 ```
 F1 > Tasks: Run Build Task > Setup Python Environment
