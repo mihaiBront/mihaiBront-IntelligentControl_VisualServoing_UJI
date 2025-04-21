@@ -8,12 +8,13 @@
             "name": "Python: dataset_generation",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/dataset_generation.py",
+            "program": "${workspaceFolder}/generateDataset.py",
             "args": [
-                "--num-sequences", "1",
+                "--num-sequences", "10000",
                 "--output-dir", "dataset_sample",
                 "--max-iterations", "200",
-                "--visualize"
+                "--visualize",
+                "--savebunch-size", "50"
             ],
             "console": "integratedTerminal"
         }
