@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import numpy as np
 import matplotlib.pyplot as plt
 import math
@@ -15,9 +15,14 @@ from machinevisiontoolbox import *
 from spatialmath.base import *
 from spatialmath import *
 
+@dataclass
 class IPVSDatasetGeneration():
-    def generate_random_points(num_points=4, min_distance=0.5, max_distance=3.0):
-        """Generate random 3D points for the IBVS task.
+    camera: CentralCamera = CentralCamera(imagesize=(640, 480))
+    
+    @staticmethod
+    def generate_random_points(min_distance=0.5, max_distance=1) -> SE3:
+        """Generate random 3D points for the IBVS task. Always a set of four points
+        disposed in a square shape, forming a plain perpendicular to the camera
         
         Args:
             num_points: Number of points to generate
@@ -27,25 +32,22 @@ class IPVSDatasetGeneration():
         Returns:
             P: 3xN array of 3D points
         """
-        # Generate random angles for spherical coordinates
-        theta = np.random.uniform(0, 2*pi, num_points)  # azimuthal angle
-        phi = np.random.uniform(0, pi, num_points)      # polar angle
-        
-        # Generate random distances
-        r = np.random.uniform(min_distance, max_distance, num_points)
         
         # Convert to Cartesian coordinates
-        x = r * np.sin(phi) * np.cos(theta)
-        y = r * np.sin(phi) * np.sin(theta)
-        z = r * np.cos(phi)
+        x = np.random.uniform(-max_distance, max_distance)
+        y = np.random.uniform(-max_distance, max_distance)
+        z = np.random.uniform(min_distance, max_distance)
         
         # Stack into a 3xN array
-        P = np.vstack((x, y, z))
+        P = mkgrid(2, side=0.5, pose=SE3.Trans(x, y, z))
         
         return P
 
-    def generate_random_camera_pose(min_distance=1.0, max_distance=5.0):
-        """Generate a random camera pose.
+    @staticmethod
+    def generate_random_camera_pose(min_distance=1.0, max_distance=5.0) -> SE3:
+        """Generate a random camera pose. Assume it will sit parallel to the floor
+        surface, so no roll and pitch axes, but there is yaw to provide some extra
+        data variability and make the dataset more variate
         
         Args:
             min_distance: Minimum distance from the origin
@@ -60,8 +62,8 @@ class IPVSDatasetGeneration():
         z = np.random.uniform(-max_distance, -min_distance)  # Camera is looking at the origin
         
         # Generate random rotation (Euler angles)
-        roll = np.random.uniform(-pi/4, pi/4)
-        pitch = np.random.uniform(-pi/4, pi/4)
+        roll = 0
+        pitch = 0
         yaw = np.random.uniform(0, 2*pi)
         
         # Create SE3 object
@@ -69,7 +71,19 @@ class IPVSDatasetGeneration():
         
         return pose
 
-    def generate_desired_image_points(camera, num_points=4, size=200):
+    def random_reposition_camera(self, min_distance=1.0, max_distance=5.0) -> CentralCamera:
+        """ Override the camera parameter from the class, generating a new one with 
+        the same characteristics, although positioned different
+        
+        """
+        pose = self.generate_random_camera_pose(min_distance, max_distance)
+        
+        # Create camera with image size (width, height)
+        self.camera = CentralCamera(pose=pose, imagesize=(640, 480))
+        
+        return self.camera
+    
+    def generate_desired_image_points(self, size=200):
         """Generate desired image points in a grid pattern.
         
         Args:
@@ -81,22 +95,11 @@ class IPVSDatasetGeneration():
             pd: 2xN array of desired image points
         """
         # Calculate grid size based on number of points
-        grid_size = int(np.ceil(np.sqrt(num_points)))
-        
-        # Generate grid points
-        x = np.linspace(-size/2, size/2, grid_size)
-        y = np.linspace(-size/2, size/2, grid_size)
-        X, Y = np.meshgrid(x, y)
-        
-        # Flatten and take only the required number of points
-        pd = np.vstack((X.flatten()[:num_points], Y.flatten()[:num_points]))
-        
-        # Add camera principal point
-        pd = pd + np.c_[camera.pp]
+        pd = size * np.array([[-1, -1, 1, 1], [-1, 1, 1, -1]]) + np.c_[self.camera.pp]
         
         return pd
 
-    def run_ibvs_sequence(camera, P, pd, max_iterations=50, lambda_value=0.1, verbose=False):
+    def run_ibvs_sequence(self, P, pd, max_iterations=50, lambda_value=0.1, verbose=False):
         """Run an IBVS sequence and collect data.
         
         Args:
@@ -111,14 +114,14 @@ class IPVSDatasetGeneration():
             data: Dictionary containing the collected data
         """
         # Create IBVS object
-        ibvs = IBVS(camera, P=P, p_d=pd, lmbda=lambda_value)
+        ibvs = IBVS(self.camera, P=P, p_d=pd, lmbda=lambda_value)
         
         # Initialize data storage
-        current_points = []
-        desired_points = []
-        camera_poses = []
-        camera_velocities = []
-        errors = []
+        current_points = [] # points on the camera plain
+        desired_points = [] # desired points position on the camera plain
+        camera_poses = [] # camera position
+        camera_velocities = [] # camera velocity
+        errors = [] # errors for each point
         
         # Run IBVS for the specified number of iterations
         for i in range(max_iterations):
@@ -128,7 +131,7 @@ class IPVSDatasetGeneration():
             camera_poses.append(ibvs.camera.pose.copy())
             
             # Calculate error
-            current_p = ibvs.camera.project_point(P, pose=ibvs.camera.pose)
+            current_p = ibvs.camera.project_point(ibvs.P.copy(), pose=ibvs.camera.pose)
             error = current_p - pd
             errors.append(error)
             
@@ -173,6 +176,7 @@ class IPVSDatasetGeneration():
         
         return data
 
+    @staticmethod
     def prepare_data_for_training(dataset):
         """Prepare data for neural network training.
         
@@ -211,6 +215,7 @@ class IPVSDatasetGeneration():
         
         return X, y
 
+    @staticmethod
     def visualize_sequence(sequence, save_path=None):
         """Visualize a sample sequence.
         
@@ -291,6 +296,7 @@ class IPVSDatasetGeneration():
         else:
             plt.show()
 
+    @staticmethod
     def save_sequence_to_csv(sequence, output_dir, sequence_id):
         """Save a sequence to CSV files.
         
@@ -344,6 +350,7 @@ class IPVSDatasetGeneration():
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
 
+    @staticmethod
     def load_sequence_from_csv(output_dir, sequence_id):
         """Load a sequence from CSV files.
         
@@ -408,7 +415,8 @@ class IPVSDatasetGeneration():
         }
         
         return sequence
-
+    
+    @staticmethod
     def save_dataset_to_csv(dataset, output_dir):
         """Save the entire dataset to a single CSV file.
         
@@ -555,6 +563,7 @@ class IPVSDatasetGeneration():
         
         print(f"Saved {len(dataset)} sequences to {csv_file}")
 
+    @staticmethod
     def load_dataset_from_csv(output_dir):
         """Load the entire dataset from a single CSV file.
         

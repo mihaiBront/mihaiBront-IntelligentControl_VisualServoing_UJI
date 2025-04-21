@@ -37,7 +37,6 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Generate IBVS dataset for neural network training')
     parser.add_argument('--num-sequences', type=int, default=1000, help='Number of sequences to generate')
-    parser.add_argument('--num-points', type=int, default=4, help='Number of points per sequence')
     parser.add_argument('--max-iterations', type=int, default=200, help='Maximum iterations per sequence')
     parser.add_argument('--lambda-value', type=float, default=0.1, help='Gain for the IBVS controller')
     parser.add_argument('--output-dir', type=str, default='dataset', help='Directory to save the dataset')
@@ -52,10 +51,12 @@ def main():
     
     # Set random seed for reproducibility
     np.random.seed(42)
+    ivbsCameraDatasetGen = DsGen()
+    
     
     if args.load:
         # Load existing dataset
-        dataset = DsGen.load_dataset_from_csv(args.output_dir)
+        dataset = ivbsCameraDatasetGen.load_dataset_from_csv(args.output_dir)
     else:
         # Initialize dataset
         dataset = []
@@ -64,16 +65,16 @@ def main():
         print(f"Generating {args.num_sequences} sequences...")
         for i in range(args.num_sequences):
             # Create camera with random pose
-            camera = CentralCamera.Default(pose=DsGen.generate_random_camera_pose())
+            camera = ivbsCameraDatasetGen.random_reposition_camera()
             
             # Generate random 3D points
-            P = DsGen.generate_random_points(num_points=args.num_points)
+            P = ivbsCameraDatasetGen.generate_random_points()
             
             # Generate desired image points
-            pd = DsGen.generate_desired_image_points(camera, num_points=args.num_points)
+            pd = ivbsCameraDatasetGen.generate_desired_image_points()
             
             # Run IBVS sequence
-            data = DsGen.run_ibvs_sequence(camera, P, pd, max_iterations=args.max_iterations, lambda_value=args.lambda_value)
+            data = ivbsCameraDatasetGen.run_ibvs_sequence(P, pd, max_iterations=args.max_iterations, lambda_value=args.lambda_value)
             
             # Add metadata
             data['sequence_id'] = i
@@ -85,11 +86,11 @@ def main():
             
             # Save intermediate results every 100 sequences
             if (i + 1) % 100 == 0:
-                DsGen.save_dataset_to_csv(dataset, args.output_dir)
+                ivbsCameraDatasetGen.save_dataset_to_csv(dataset, args.output_dir)
                 print(f"Saved {i+1} sequences to {args.output_dir}")
         
         # Save final dataset
-        DsGen.save_dataset_to_csv(dataset, args.output_dir)
+        ivbsCameraDatasetGen.save_dataset_to_csv(dataset, args.output_dir)
         print(f"Saved {args.num_sequences} sequences to {args.output_dir}")
     
     # Visualize a sample sequence if requested
@@ -97,13 +98,13 @@ def main():
         print("Visualizing a sample sequence...")
         sequence_idx = np.random.randint(0, len(dataset))
         sequence = dataset[sequence_idx]
-        DsGen.visualize_sequence(sequence, save_path=os.path.join(args.output_dir, "sample_sequence.png"))
+        ivbsCameraDatasetGen.visualize_sequence(sequence, save_path=os.path.join(args.output_dir, "sample_sequence.png"))
         print(f"Visualization saved to {os.path.join(args.output_dir, 'sample_sequence.png')}")
     
     # Prepare data for neural network training if requested
     if args.prepare_data:
         print("Preparing data for neural network training...")
-        X, y = DsGen.prepare_data_for_training(dataset)
+        X, y = ivbsCameraDatasetGen.prepare_data_for_training(dataset)
         
         # Save prepared data
         np.savetxt(os.path.join(args.output_dir, "X.csv"), X, delimiter=',')
