@@ -174,3 +174,4 @@ cython_debug/
 /dataset*/
 outputs/
 **/outputs/
+training_generation
