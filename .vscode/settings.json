@@ -1,0 +1,98 @@
+{
+    "todo-tree.highlights.customHighlight": {
+        "TODO": {
+            "icon": "check",
+            "foreground": "#fff",
+            "background": "#ffbd2a",
+            "iconColour": "#ffbd2a"
+        },
+        "FIXME": {
+            "icon": "bug",
+            "foreground": "#fff",
+            "background": "#f06292",
+            "iconColour": "#f06292"
+        },
+        "NOTE": {
+            "icon": "info",
+            "foreground": "#fff",
+            "background": "#3498db",
+            "iconColour": "#3498db"
+        },
+        "HACK": {
+            "icon": "tools",
+            "foreground": "#fff",
+            "background": "#e67e22",
+            "iconColour": "#e67e22"
+        },
+        "REVIEW": {
+            "icon": "eye",
+            "foreground": "#fff",
+            "background": "#8e44ad",
+            "iconColour": "#8e44ad"
+        },
+        "HERE": {
+            "icon": "location",
+            "foreground": "#fff",
+            "background": "#2ecc71",
+            "iconColour": "#2ecc71"
+        }
+    },
+    "todo-tree.highlights.defaultHighlight": {
+        "type": "text-and-comment",
+        "fontWeight": "bold"
+    },
+    "todo-tree.general.tags": [
+        "TODO",
+        "FIXME",
+        "NOTE",
+        "HACK",
+        "REVIEW",
+        "HERE"
+    ],
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "scope": "keyword.todo",
+                "settings": {
+                    "foreground": "#ffbd2a",
+                    "fontStyle": "bold"
+                }
+            },
+            {
+                "scope": "keyword.fixme",
+                "settings": {
+                    "foreground": "#f06292",
+                    "fontStyle": "bold"
+                }
+            },
+            {
+                "scope": "keyword.note",
+                "settings": {
+                    "foreground": "#3498db",
+                    "fontStyle": "bold"
+                }
+            },
+            {
+                "scope": "keyword.hack",
+                "settings": {
+                    "foreground": "#e67e22",
+                    "fontStyle": "bold"
+                }
+            },
+            {
+                "scope": "keyword.review",
+                "settings": {
+                    "foreground": "#8e44ad",
+                    "fontStyle": "bold"
+                }
+            },
+            {
+                "scope": "keyword.here",
+                "settings": {
+                    "foreground": "#2ecc71",
+                    "fontStyle": "bold"
+                }
+            }
+        ]
+    }
+} 

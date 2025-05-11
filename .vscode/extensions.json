@@ -1,0 +1,43 @@
+{
+    "recommendations": [
+        // Python essentials
+        "ms-python.python",                    // Python language support
+        "ms-python.vscode-pylance",           // Python language server
+        
+        // Code quality and formatting
+        "ms-python.black-formatter",          // Python code formatting
+        "ms-python.flake8",                   // Python linting
+        "ms-python.isort",                    // Import sorting
+        
+        // Machine Learning specific
+        "ms-toolsai.jupyter",                 // Jupyter notebooks support
+        "ms-toolsai.jupyter-keymap",          // Jupyter keyboard shortcuts
+        "ms-toolsai.jupyter-renderers",       // Jupyter notebook renderers
+        
+        // Git integration
+        "eamodio.gitlens",                    // Git blame annotations
+        "mhutchie.git-graph",                 // Git history visualization
+        
+        // Productivity
+        "Gruntfuggly.todo-tree",             // Highlight TODO comments
+        "yzhang.markdown-all-in-one",         // Markdown support
+        "christian-kohler.path-intellisense", // Path autocompletion
+        "njpwerner.autodocstring",            // Python docstring generation
+        
+        // Math and Scientific
+        "ms-toolsai.vscode-jupyter-cell-tags",  // Jupyter cell tags
+        "ms-toolsai.vscode-jupyter-slideshow",  // Jupyter slideshow
+        "james-yu.latex-workshop",              // LaTeX support for documentation
+        
+        // Visualization
+        "mechatroner.rainbow-csv",            // CSV file visualization
+        "GrapeCity.gc-excelviewer",          // Excel file viewer
+        
+        // Testing
+        "littlefoxteam.vscode-python-test-adapter",  // Python test explorer
+        
+        // Remote Development
+        "ms-vscode-remote.remote-wsl",         // WSL support
+        "ms-vscode-remote.remote-ssh"          // SSH support
+    ]
+} 

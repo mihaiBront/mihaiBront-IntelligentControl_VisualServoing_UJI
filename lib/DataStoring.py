@@ -24,45 +24,18 @@ import logging as log
 class RowData():
     sequence_id: int = field(default=0)
     timestep: int = field(default=0)
-    current_point1_x: float = field(default=0.0)
-    current_point1_y: float = field(default=0.0)
-    current_point2_x: float = field(default=0.0) 
-    current_point2_y: float = field(default=0.0)
-    current_point3_x: float = field(default=0.0)
-    current_point3_y: float = field(default=0.0)
-    current_point4_x: float = field(default=0.0)
-    current_point4_y: float = field(default=0.0)
-    desired_point1_x: float = field(default=0.0)
-    desired_point1_y: float = field(default=0.0)
-    desired_point2_x: float = field(default=0.0)
-    desired_point2_y: float = field(default=0.0)
-    desired_point3_x: float = field(default=0.0)
-    desired_point3_y: float = field(default=0.0)
-    desired_point4_x: float = field(default=0.0)
-    desired_point4_y: float = field(default=0.0)
-    robot_pose_11: float = field(default=0.0)
-    robot_pose_12: float = field(default=0.0)
-    robot_pose_13: float = field(default=0.0)
-    robot_pose_14: float = field(default=0.0)
-    robot_pose_21: float = field(default=0.0)
-    robot_pose_22: float = field(default=0.0)
-    robot_pose_23: float = field(default=0.0)
-    robot_pose_24: float = field(default=0.0)
-    robot_pose_31: float = field(default=0.0)
-    robot_pose_32: float = field(default=0.0)
-    robot_pose_33: float = field(default=0.0)
-    robot_pose_34: float = field(default=0.0)
-    robot_pose_41: float = field(default=0.0)
-    robot_pose_42: float = field(default=0.0)
-    robot_pose_43: float = field(default=0.0)
-    robot_pose_44: float = field(default=0.0)
-    robot_velocity_vx: float = field(default=0.0)
-    robot_velocity_vy: float = field(default=0.0)
-    robot_velocity_vz: float = field(default=0.0)
-    robot_velocity_wx: float = field(default=0.0)
-    robot_velocity_wy: float = field(default=0.0)
-    robot_velocity_wz: float = field(default=0.0)
-    final_error: float = field(default=0.0)
+    
+    # Current feature points (flattened 2xN array)
+    current_features: np.ndarray = field(default_factory=lambda: np.zeros(8))  # For 4 points (x,y)
+    
+    # Desired feature points (flattened 2xN array)
+    desired_features: np.ndarray = field(default_factory=lambda: np.zeros(8))  # For 4 points (x,y)
+    
+    # Output velocity command
+    velocity_command: np.ndarray = field(default_factory=lambda: np.zeros(6))  # [vx, vy, vz, wx, wy, wz]
+    
+    # Error metrics
+    feature_error: float = field(default=0.0)  # Norm of feature error
     
     def set_sequence_id(self, sequence_id):
         self.sequence_id = sequence_id
@@ -70,79 +43,82 @@ class RowData():
     def set_timestep(self, timestep):
         self.timestep = timestep
     
-    def set_current_points(self, current_points):
-        self.current_point1_x = current_points[0, 0]
-        self.current_point1_y = current_points[1, 0]
-        self.current_point2_x = current_points[0, 1]
-        self.current_point2_y = current_points[1, 1]
-        self.current_point3_x = current_points[0, 2]
-        self.current_point3_y = current_points[1, 2]
-        self.current_point4_x = current_points[0, 3]
-        self.current_point4_y = current_points[1, 3]
+    def set_current_features(self, current_points):
+        """Set current feature points from 2xN array"""
+        self.current_features = current_points.flatten(order='F')
     
-    def set_desired_points(self, desired_points):
-        self.desired_point1_x = desired_points[0, 0]
-        self.desired_point1_y = desired_points[1, 0]
-        self.desired_point2_x = desired_points[0, 1]
-        self.desired_point2_y = desired_points[1, 1]
-        self.desired_point3_x = desired_points[0, 2]
-        self.desired_point3_y = desired_points[1, 2]
-        self.desired_point4_x = desired_points[0, 3]
-        self.desired_point4_y = desired_points[1, 3]
-        
-    def set_robot_pose(self, robot_pose):
-        self.robot_pose_11 = robot_pose[0, 0]
-        self.robot_pose_12 = robot_pose[0, 1]
-        self.robot_pose_13 = robot_pose[0, 2]
-        self.robot_pose_14 = robot_pose[0, 3]
-        self.robot_pose_21 = robot_pose[1, 0]
-        self.robot_pose_22 = robot_pose[1, 1]
-        self.robot_pose_23 = robot_pose[1, 2]
-        self.robot_pose_24 = robot_pose[1, 3]
-        self.robot_pose_31 = robot_pose[2, 0]
-        self.robot_pose_32 = robot_pose[2, 1]
-        self.robot_pose_33 = robot_pose[2, 2]
-        self.robot_pose_34 = robot_pose[2, 3]
-        self.robot_pose_41 = robot_pose[3, 0]
-        self.robot_pose_42 = robot_pose[3, 1]
-        self.robot_pose_43 = robot_pose[3, 2]
-        self.robot_pose_44 = robot_pose[3, 3]
-        
-    def set_robot_velocity(self, robot_velocity):
-        self.robot_velocity_vx = robot_velocity[0]
-        self.robot_velocity_vy = robot_velocity[1]
-        self.robot_velocity_vz = robot_velocity[2]
-        self.robot_velocity_wx = robot_velocity[3]
-        self.robot_velocity_wy = robot_velocity[4]
-        self.robot_velocity_wz = robot_velocity[5]
-        
-    def set_final_error(self, final_error):
-        self.final_error = final_error
+    def set_desired_features(self, desired_points):
+        """Set desired feature points from 2xN array"""
+        self.desired_features = desired_points.flatten(order='F')
+    
+    def set_velocity_command(self, velocity):
+        """Set the 6-DOF velocity command"""
+        self.velocity_command = np.array(velocity)
+    
+    def set_feature_error(self, error):
+        """Set the feature error norm"""
+        self.feature_error = error
 
     @classmethod
     def get_headers_row(cls):
-        temp = cls()
-        params = temp.__dict__.keys()
-        return ", ".join(params) + "\n"
+        base_headers = ["sequence_id", "timestep"]
+        
+        # Add current feature headers
+        current_features_headers = [f"current_feature_{i}" for i in range(8)]
+        
+        # Add desired feature headers
+        desired_features_headers = [f"desired_feature_{i}" for i in range(8)]
+        
+        # Add velocity headers
+        velocity_headers = ["vx", "vy", "vz", "wx", "wy", "wz"]
+        
+        # Add error header
+        error_header = ["feature_error"]
+        
+        # Combine all headers
+        all_headers = (base_headers + current_features_headers + 
+                      desired_features_headers + velocity_headers + 
+                      error_header)
+        
+        return ", ".join(all_headers) + "\n"
     
     def get_csv_row(self):
-        temp = self.__dict__.values()
-        return ", ".join(map(str, temp)) + "\n"
+        values = [
+            self.sequence_id,
+            self.timestep,
+            *self.current_features,
+            *self.desired_features,
+            *self.velocity_command,
+            self.feature_error
+        ]
+        return ", ".join(map(str, values)) + "\n"
     
     @classmethod
     def fromIBVS(cls, ibvs: IBVS, iteration: int, step: int):
         obj = cls()
         obj.set_sequence_id(iteration)
         obj.set_timestep(step)
+        
         try:
-            projected_points = ibvs.camera.project_point(P=ibvs.P, pose=ibvs.camera.pose)
+            # Get current feature points
+            current_points = ibvs.camera.project_point(P=ibvs.P, pose=ibvs.camera.pose)
+            obj.set_current_features(current_points)
+            
+            # Get desired feature points
+            obj.set_desired_features(ibvs.p_star)
+            
+            # Get velocity command from history
+            if len(ibvs.history) > 0:
+                obj.set_velocity_command(ibvs.history[-1].vel)
+            
+            # Calculate and store feature error
+            error = np.linalg.norm(current_points.flatten(order='F') - ibvs.p_star.flatten(order='F'))
+            obj.set_feature_error(error)
+            
         except Exception as e:
-            log.error(f"Error projecting points: {e}")
-        obj.set_current_points(projected_points)
-        obj.set_desired_points(ibvs.p_star.copy())  # Store the desired points at each timestep
-        obj.set_robot_pose(ibvs.history[-1].pose.A.copy())
-        obj.set_robot_velocity(ibvs.history[-1].vel.copy())
-        obj.set_final_error(np.linalg.norm(ibvs.history[-1].e.copy()))
+            log.error(f"Error creating RowData from IBVS: {e}")
+            raise
+        
         return obj
     
 if __name__ == "__main__":
