@@ -80,7 +80,7 @@ class RowData():
                       desired_features_headers + velocity_headers + 
                       error_header)
         
-        return ", ".join(all_headers) + "\n"
+        return ",".join(all_headers) + "\n"
     
     def get_csv_row(self):
         values = [
@@ -91,7 +91,7 @@ class RowData():
             *self.velocity_command,
             self.feature_error
         ]
-        return ", ".join(map(str, values)) + "\n"
+        return ",".join(map(str, values)) + "\n"
     
     @classmethod
     def fromIBVS(cls, ibvs: IBVS, iteration: int, step: int):
@@ -134,7 +134,7 @@ class DataStore():
     def start_file(self):
         log.info(f"Starting file {self.path}")
         self.path = os.path.join(self.path, f"data_{self.lastStoredRowId}.csv")
-        with open(self.path + ".csv", "w") as f:
+        with open(self.path, "w") as f:
             f.write(RowData.get_headers_row())
     
     def __post_init__(self):
@@ -149,7 +149,7 @@ class DataStore():
         
     def append_rows(self, rows: list[RowData]):
         log.info(f"Appending {len(rows)} rows to {self.path}")
-        with open(self.path + ".csv", "a") as f:
+        with open(self.path, "a") as f:
             for row in rows[self.lastStoredRowId:]:
                 f.write(row.get_csv_row())
             self.lastStoredRowId = len(rows)
