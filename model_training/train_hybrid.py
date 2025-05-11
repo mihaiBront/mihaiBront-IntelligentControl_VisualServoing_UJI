@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import argparse
-from lib.DataLoading import prepare_dataloaders, train_epoch, validate
-from config import HYBRID_CONFIG, BATCH_SIZE, NUM_EPOCHS, LEARNING_RATE, VAL_SPLIT, DEVICE, RANDOM_SEED
-import os
+from lib.BaseModelTrainer import BaseModelTrainer
+from config import HYBRID_CONFIG
 
 class HybridController(nn.Module):
     def __init__(self, input_size, cnn_channels, lstm_hidden_size, lstm_num_layers,
@@ -70,64 +68,20 @@ class HybridController(nn.Module):
         # Final fully connected layers
         return self.fc(x)
 
-def train_hybrid(data_path):
-    """
-    Train the Hybrid Controller
-    """
-    # Set random seed
-    torch.manual_seed(RANDOM_SEED)
+class HybridTrainer(BaseModelTrainer):
+    def __init__(self):
+        super().__init__('hybrid', HYBRID_CONFIG)
     
-    # Create model
-    model = HybridController(
-        input_size=HYBRID_CONFIG['input_size'],
-        cnn_channels=HYBRID_CONFIG['cnn_channels'],
-        lstm_hidden_size=HYBRID_CONFIG['lstm_hidden_size'],
-        lstm_num_layers=HYBRID_CONFIG['lstm_num_layers'],
-        output_size=HYBRID_CONFIG['output_size'],
-        dropout_rate=HYBRID_CONFIG['dropout_rate'],
-        sequence_length=HYBRID_CONFIG['sequence_length']
-    ).to(DEVICE)
-    
-    # Prepare data
-    train_loader, val_loader = prepare_dataloaders(
-        data_path,
-        batch_size=BATCH_SIZE,
-        sequence_length=HYBRID_CONFIG['sequence_length'],
-        val_split=VAL_SPLIT
-    )
-    
-    # Loss and optimizer
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    
-    # Training loop
-    best_val_loss = float('inf')
-    print(f"\nStarting training for {NUM_EPOCHS} epochs...")
-    print("=" * 50)
-    
-    # Create training_models directory if it doesn't exist
-    os.makedirs('training_models', exist_ok=True)
-    
-    for epoch in range(NUM_EPOCHS):
-        print(f"\nEpoch {epoch+1}/{NUM_EPOCHS}")
-        print("-" * 20)
-        
-        # Training and validation with progress bars
-        train_loss = train_epoch(model, train_loader, criterion, optimizer, DEVICE)
-        val_loss = validate(model, val_loader, criterion, DEVICE)
-        
-        # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), 'training_models/hybrid_best.pth')
-            print("\n✓ Saved new best model!")
-        
-        # Epoch summary
-        print(f"\nEpoch Summary:")
-        print(f"Train Loss: {train_loss:.6f}")
-        print(f"Val Loss:   {val_loss:.6f}")
-        print(f"Best Val:   {best_val_loss:.6f}")
-        print("=" * 50)
+    def create_model(self):
+        return HybridController(
+            input_size=self.config['input_size'],
+            cnn_channels=self.config['cnn_channels'],
+            lstm_hidden_size=self.config['lstm_hidden_size'],
+            lstm_num_layers=self.config['lstm_num_layers'],
+            output_size=self.config['output_size'],
+            dropout_rate=self.config['dropout_rate'],
+            sequence_length=self.config['sequence_length']
+        )
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Hybrid CNN-LSTM for IBVS control')
@@ -135,4 +89,5 @@ if __name__ == '__main__':
                       help='Path to the dataset CSV file')
     args = parser.parse_args()
     
-    train_hybrid(args.data_path) 
+    trainer = HybridTrainer()
+    trainer.train(args.data_path) 
