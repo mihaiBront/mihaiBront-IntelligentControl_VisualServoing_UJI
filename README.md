@@ -89,9 +89,11 @@ A web-based monitoring system has been implemented to track neural network train
 **Features:**
 - **Real-time metrics display**: Current epoch, training/validation losses
 - **Interactive loss curves**: Plotly graphs showing training progress with best epoch markers
+- **Model architecture diagrams**: Interactive Mermaid diagrams showing network structure with layers, dropouts, and data flow
 - **Model configuration display**: Training parameters and model architecture
 - **Responsive design**: Works on desktop and mobile devices
 - **Auto-refresh**: Updates every second during training
+- **PDF Export**: Print-optimized layout for generating PDF reports
 
 **Usage:**
 ```bash
@@ -103,15 +105,85 @@ http://localhost:5000
 
 # Access from phone (same WiFi network)
 http://[YOUR_IP]:5000
+
+# Generate PDF report
+# Click "Print PDF" button or press Ctrl+P
 ```
 
 **Technical Implementation:**
 - Flask server with file system monitoring (watchdog)
 - JSON metadata files updated after each epoch with performance metrics
 - Modern HTML/CSS interface with Plotly.js for interactive graphs
+- Mermaid.js integration for dynamic architecture diagram rendering
 - WebSocket-like updates via REST API polling
 - Comprehensive performance tracking: timing, throughput, memory usage
 - Dual-axis plots for correlated metrics visualization
+- Print-optimized CSS with A4 page layout and proper typography for PDF generation
+
+### 3.1.1 PDF Report Generation
+
+The web interface includes comprehensive PDF export functionality for generating professional training reports:
+
+**Print Features:**
+- **One-click PDF generation**: Click "Print PDF" button or use Ctrl+P keyboard shortcut
+- **A4 page layout**: Optimized for standard paper size with proper margins (0.5 inch)
+- **Print-friendly styling**: Removes backgrounds, shadows, and interactive elements
+- **Automatic page breaks**: Prevents content from being split awkwardly across pages
+- **Typography optimization**: Uses point-based fonts (12pt body, 18pt headings) for print clarity
+- **Timestamp inclusion**: Automatically adds generation timestamp to the report
+- **Graph optimization**: Ensures Plotly charts render properly with white backgrounds
+- **Architecture diagrams**: Mermaid diagrams optimized for print with proper scaling and backgrounds
+
+**Print Layout:**
+- **Training Status**: Model name, current metrics, and progress summary
+- **Loss Curves**: Training and validation loss progression with best epoch markers
+- **Performance Charts**: Training speed and resource usage dual-axis plots
+- **Architecture Diagram**: Visual representation of neural network structure with layers and connections
+- **Configuration Details**: Complete model and training parameter listings
+
+**Browser Compatibility:**
+- Works with all modern browsers' print functionality
+- Chrome: File → Print → Save as PDF
+- Firefox: File → Print → Microsoft Print to PDF
+- Safari: File → Print → PDF dropdown
+- Edge: File → Print → Save as PDF
+
+**Usage Tips:**
+- Wait for training data to load before printing for complete reports
+- Use landscape orientation for better chart visibility if needed
+- Adjust print scale (90-100%) if content appears cut off
+
+### 3.1.2 Interactive Architecture Diagrams
+
+The web interface now includes comprehensive neural network architecture visualization using Mermaid.js:
+
+**Architecture Features:**
+- **Dynamic Loading**: Diagrams automatically load based on the current training model
+- **Interactive Visualization**: Hover effects and clickable elements for detailed exploration
+- **Layer Details**: Shows input/output dimensions, activation functions, dropout rates, and initialization methods
+- **Data Flow**: Clear visualization of information flow through the network
+- **Color Coding**: Different colors for input, linear layers, activations, dropout, and output layers
+- **Mobile Responsive**: Optimized for both desktop and mobile viewing
+
+**Available Diagrams:**
+- **FNN**: Feedforward network with batch normalization and dropout layers
+- **LSTM**: Sequence processing with LSTM cells and fully connected head
+- **ResNet**: Residual blocks with skip connections and identity mappings
+- **Hybrid**: CNN-LSTM combination showing spatial and temporal processing
+
+**Diagram Components:**
+- **Input Processing**: StandardScaler normalization and input shape information
+- **Layer Architecture**: Detailed layer specifications with dimensions and parameters
+- **Regularization**: Visual representation of dropout and batch normalization
+- **Skip Connections**: Clear visualization of residual connections in ResNet
+- **Output Processing**: Final layer details and inverse scaling
+
+**File Storage:**
+Each model's architecture diagram is stored as a Markdown file in `training_models/`:
+- `fnn_architecture.md`: FNN network structure
+- `lstm_architecture.md`: LSTM sequence processing
+- `resnet_architecture.md`: ResNet with residual blocks
+- `hybrid_architecture.md`: CNN-LSTM hybrid architecture
 
 ### 3.2 Dataset Corrections and Findings
 
@@ -367,7 +439,118 @@ Based on similar applications in robotics control:
 
 ## 4. TROUBLESHOOTING AND KEY FIXES
 
-### 4.1 Common Issues and Solutions
+### 4.1 Understanding Validation Loss Lower Than Training Loss
+
+**Observation:** During training, you may notice that validation loss is consistently lower than training loss. This is actually a normal and expected behavior in our IBVS neural network training, not an error. Here's why this occurs:
+
+#### 4.1.1 Regularization Applied During Training Only ✅
+
+Our models use several regularization techniques that are **only active during training**:
+
+**Dropout Regularization:**
+- **FNN Model**: 30% dropout rate (`dropout_rate: 0.3`)
+- **LSTM Model**: 20% dropout rate (`dropout_rate: 0.2`) 
+- **ResNet Model**: 20% dropout rate in residual blocks
+- **Hybrid Model**: 20% dropout rate in CNN and LSTM layers
+
+During training, dropout randomly disables neurons, making the network work harder and appear to have higher loss. During validation, dropout is disabled (`model.eval()`), allowing the full network capacity to be used, resulting in better performance.
+
+**Batch Normalization:**
+- **FNN Model**: Uses `BatchNorm1d` layers (`use_batch_norm: True`)
+- During training: Uses batch statistics (mean/variance of current mini-batch)
+- During validation: Uses global statistics (running averages), providing more stable and consistent normalization
+
+**Weight Decay (L2 Regularization):**
+- Applied during training: `weight_decay=1e-3` in Adam optimizer
+- Penalizes large weights during training but doesn't affect validation evaluation
+- Makes training loss appear higher while improving generalization
+
+#### 4.1.2 Loss Function Computation Differences ✅
+
+**Mini-batch vs Full Dataset Evaluation:**
+- **Training Loss**: Computed per mini-batch (batch_size=64), then averaged across batches
+- **Validation Loss**: Computed over entire validation set in one pass
+- Mini-batch variance can make training loss appear higher due to batch-to-batch fluctuations
+
+**Model State Differences:**
+```python
+# Training mode (in train_epoch function)
+model.train()  # Enables dropout, batch norm uses batch stats
+
+# Validation mode (in validate function)  
+model.eval()   # Disables dropout, batch norm uses global stats
+```
+
+#### 4.1.3 Data Distribution and Sampling ✅
+
+**Validation Set Characteristics:**
+- **Size**: 20% of total dataset (VAL_SPLIT = 0.2)
+- **Sampling**: Random split ensures representative distribution
+- **Consistency**: Fixed validation set provides stable evaluation baseline
+
+**Training Data Augmentation Effects:**
+- While we don't use explicit data augmentation, the random mini-batch sampling during training exposes the model to different data combinations each epoch
+- Validation uses the same data consistently, allowing for more stable loss computation
+
+#### 4.1.4 Early Training Dynamics ✅
+
+**Learning Phase Characteristics:**
+- **Early Epochs**: Model may accidentally perform better on validation due to initialization
+- **Mid Training**: Training loss typically becomes lower as model memorizes training patterns
+- **Late Training**: Regularization prevents overfitting, keeping validation competitive
+
+#### 4.1.5 Expected Behavior Patterns
+
+**Healthy Training Indicators:**
+1. **Converging Losses**: Both training and validation losses should generally decrease
+2. **Stable Gap**: Small, consistent difference between training and validation loss
+3. **No Divergence**: Validation loss shouldn't consistently increase while training decreases
+
+**Warning Signs (Overfitting):**
+1. **Diverging Losses**: Training loss continues decreasing while validation loss increases
+2. **Large Gap**: Training loss much lower than validation loss (>2x difference)
+3. **Oscillating Validation**: Validation loss becomes erratic while training is smooth
+
+#### 4.1.6 Monitoring and Analysis
+
+**Real-time Monitoring:**
+Our web interface (`http://localhost:5000`) shows both losses with clear visualization:
+- Blue line: Training loss progression
+- Red line: Validation loss progression  
+- Gold star: Best validation loss epoch
+- Early stopping triggers when validation loss stops improving
+
+**Example from FNN Training:**
+```json
+"train_losses": [0.520, 0.380, 0.346, ...],
+"val_losses": [0.153, 0.104, 0.104, ...],
+"best_val_loss": 0.03789775519556917,
+"best_epoch": 36
+```
+
+Notice how validation loss (0.153) starts much lower than training loss (0.520) due to regularization effects.
+
+#### 4.1.7 Technical Implementation Details
+
+**Code References:**
+- Training loop: `lib/BaseModelTrainer.py:train()` 
+- Model modes: `lib/DataLoading.py:train_epoch()` and `validate()`
+- Regularization configs: `model_training/config.py`
+
+**Key Functions:**
+```python
+# Training with regularization active
+def train_epoch(model, train_loader, criterion, optimizer, device):
+    model.train()  # Enables dropout, batch norm training mode
+    
+# Validation with regularization disabled  
+def validate(model, val_loader, criterion, device):
+    model.eval()   # Disables dropout, batch norm eval mode
+```
+
+**Conclusion:** Validation loss being lower than training loss is **expected and healthy** in our implementation due to the extensive regularization techniques used. This indicates the model is learning generalizable patterns rather than memorizing training data.
+
+### 4.2 Common Issues and Solutions
 
 **Problem: Loss stuck at 0.5 and not decreasing**
 - **Root Cause**: Dataset contained 6 target outputs but only 3 had meaningful values
