@@ -21,15 +21,21 @@ fi
 # Set dataset path
 DATASET_PATH="$PROJECT_ROOT/data/dataset.csv"  # default path
 if [ $# -ge 1 ]; then
-    DATASET_PATH="$1"
+    if [ -f "$1" ]; then
+        DATASET_PATH="$1"
+    elif [ -f "$PROJECT_ROOT/$1" ]; then
+        DATASET_PATH="$PROJECT_ROOT/$1"
+    else
+        echo "Error: Dataset not found at $1 or $PROJECT_ROOT/$1"
+        show_help
+    fi
 fi
 
 # Check if dataset exists
 if [ ! -f "$DATASET_PATH" ]; then
     echo "Error: Dataset not found at $DATASET_PATH"
     echo "Please provide a valid dataset path or generate the dataset first."
-    echo "Usage: $0 [dataset_path]"
-    exit 1
+    show_help
 fi
 
 # Activate virtual environment if it exists
@@ -47,6 +53,7 @@ python "$PROJECT_ROOT/model_training/train_resnet.py" --data_path "$DATASET_PATH
 # Check if training was successful
 if [ $? -eq 0 ]; then
     echo "ResNet training completed successfully"
+    exit 0
 else
     echo "ResNet training failed"
     exit 1

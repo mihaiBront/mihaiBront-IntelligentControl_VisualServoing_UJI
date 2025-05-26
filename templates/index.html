@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=3.0">
+    <title>IBVS Training Monitor</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .card {
+            background-color: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        @media (min-width: 768px) {
+            .card {
+                padding: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            color: #1f2937;
+        }
+
+        @media (min-width: 768px) {
+            .card-title {
+                font-size: 1.25rem;
+                margin-bottom: 1rem;
+            }
+        }
+
+        .metric {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #2563eb;
+            line-height: 1.2;
+        }
+
+        @media (min-width: 768px) {
+            .metric {
+                font-size: 1.875rem;
+            }
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: #4b5563;
+            margin-top: 0.25rem;
+        }
+
+        @media (min-width: 768px) {
+            .metric-label {
+                font-size: 0.875rem;
+            }
+        }
+
+        .model-name {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #1f2937;
+            text-transform: uppercase;
+            line-height: 1.2;
+        }
+
+        @media (min-width: 768px) {
+            .model-name {
+                font-size: 2.25rem;
+            }
+        }
+
+        .model-status {
+            font-size: 0.875rem;
+            color: #059669;
+            margin-top: 0.25rem;
+        }
+
+        @media (min-width: 768px) {
+            .model-status {
+                font-size: 1rem;
+            }
+        }
+
+        /* Mobile-specific optimizations */
+        @media (max-width: 767px) {
+            .mobile-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+            }
+            
+            .mobile-full {
+                grid-column: 1 / -1;
+            }
+            
+            .config-section {
+                margin-bottom: 1.5rem;
+            }
+            
+            .config-section:last-child {
+                margin-bottom: 0;
+            }
+        }
+
+        /* Touch-friendly buttons and interactions */
+        .touch-friendly {
+            min-height: 44px;
+            min-width: 44px;
+        }
+
+        /* Plotly mobile optimizations */
+        .plotly-container {
+            height: 300px;
+        }
+
+        @media (min-width: 768px) {
+            .plotly-container {
+                height: 400px;
+            }
+        }
+
+        /* Prevent text selection on mobile for better UX */
+        .no-select {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 min-h-screen p-3 md:p-8">
+    <h1 class="text-2xl md:text-3xl font-bold mb-4 md:mb-8 text-gray-900">IBVS Training Monitor</h1>
+
+    <!-- Status Card -->
+    <div class="card">
+        <h2 class="card-title">Training Status</h2>
+        
+        <!-- Model Name and Status -->
+        <div class="mb-4">
+            <div id="modelName" class="model-name no-select">-</div>
+            <div id="modelStatus" class="model-status">Not training</div>
+        </div>
+        
+        <!-- Metrics Grid - Mobile Responsive -->
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div class="text-center md:text-left">
+                <div id="currentEpoch" class="metric">-</div>
+                <div class="metric-label">Current Epoch</div>
+            </div>
+            <div class="text-center md:text-left">
+                <div id="bestValLoss" class="metric">-</div>
+                <div class="metric-label">Best Val Loss</div>
+            </div>
+            <div class="text-center md:text-left">
+                <div id="currentTrainLoss" class="metric">-</div>
+                <div class="metric-label">Train Loss</div>
+            </div>
+            <div class="text-center md:text-left">
+                <div id="currentValLoss" class="metric">-</div>
+                <div class="metric-label">Val Loss</div>
+            </div>
+            <div class="text-center md:text-left">
+                <div id="avgEpochTime" class="metric">-</div>
+                <div class="metric-label">Avg Epoch Time</div>
+            </div>
+            <div class="text-center md:text-left">
+                <div id="samplesPerSec" class="metric">-</div>
+                <div class="metric-label">Samples/sec</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Training Progress -->
+    <div class="card">
+        <h2 class="card-title">Training Progress</h2>
+        <div id="lossPlot" class="plotly-container"></div>
+    </div>
+
+    <!-- Performance Metrics -->
+    <div class="card">
+        <h2 class="card-title">Performance Metrics</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+                <h3 class="text-base md:text-lg font-semibold mb-2 text-gray-800">Training Speed</h3>
+                <div id="speedPlot" class="plotly-container"></div>
+            </div>
+            <div>
+                <h3 class="text-base md:text-lg font-semibold mb-2 text-gray-800">Resource Usage</h3>
+                <div id="resourcePlot" class="plotly-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration -->
+    <div class="card">
+        <h2 class="card-title">Configuration</h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="config-section">
+                <h3 class="text-base md:text-lg font-semibold mb-2 text-gray-800">Model Parameters</h3>
+                <div id="modelConfigList" class="bg-gray-50 p-3 rounded text-sm"></div>
+            </div>
+            <div class="config-section">
+                <h3 class="text-base md:text-lg font-semibold mb-2 text-gray-800">Training Parameters</h3>
+                <div id="trainingConfigList" class="bg-gray-50 p-3 rounded text-sm"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updatePlot(epochs, trainLosses, valLosses) {
+            const trace1 = {
+                x: epochs,
+                y: trainLosses,
+                name: 'Training Loss',
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#2563eb', width: 2 }
+            };
+
+            const trace2 = {
+                x: epochs,
+                y: valLosses,
+                name: 'Validation Loss',
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#dc2626', width: 2 }
+            };
+
+            // Find best validation loss point
+            let bestValLoss = Math.min(...valLosses);
+            let bestEpoch = epochs[valLosses.indexOf(bestValLoss)];
+
+            const trace3 = {
+                x: [bestEpoch],
+                y: [bestValLoss],
+                name: `Best: ${bestValLoss.toFixed(6)}`,
+                type: 'scatter',
+                mode: 'markers',
+                marker: {
+                    color: 'gold',
+                    size: 10,
+                    symbol: 'star',
+                    line: {
+                        color: 'darkgoldenrod',
+                        width: 2
+                    }
+                }
+            };
+
+            // Mobile-responsive layout
+            const isMobile = window.innerWidth < 768;
+            
+            const layout = {
+                title: {
+                    text: 'Training History',
+                    font: { size: isMobile ? 14 : 16 }
+                },
+                xaxis: { 
+                    title: { 
+                        text: 'Epoch',
+                        font: { size: isMobile ? 12 : 14 }
+                    },
+                    tickfont: { size: isMobile ? 10 : 12 }
+                },
+                yaxis: { 
+                    title: { 
+                        text: 'Loss',
+                        font: { size: isMobile ? 12 : 14 }
+                    },
+                    tickfont: { size: isMobile ? 10 : 12 }
+                },
+                margin: { 
+                    t: isMobile ? 35 : 40,
+                    l: isMobile ? 50 : 60,
+                    r: isMobile ? 20 : 30,
+                    b: isMobile ? 40 : 50
+                },
+                showlegend: true,
+                legend: {
+                    x: 0,
+                    y: 1,
+                    traceorder: 'normal',
+                    orientation: isMobile ? 'v' : 'h',
+                    font: { size: isMobile ? 10 : 12 },
+                    bgcolor: 'rgba(255,255,255,0.8)'
+                },
+                // Mobile touch optimizations
+                dragmode: isMobile ? 'pan' : 'zoom',
+                scrollZoom: !isMobile
+            };
+
+            const config = {
+                responsive: true,
+                displayModeBar: !isMobile, // Hide toolbar on mobile for cleaner look
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                displaylogo: false,
+                toImageButtonOptions: {
+                    format: 'png',
+                    filename: 'training_progress',
+                    height: 500,
+                    width: 700,
+                    scale: 1
+                }
+            };
+
+            Plotly.react('lossPlot', [trace1, trace2, trace3], layout, config);
+        }
+
+        function updatePerformancePlots(epochs, performance) {
+            if (epochs.length === 0 || !performance) return;
+
+            const isMobile = window.innerWidth < 768;
+            
+            // Training Speed Plot
+            const speedTrace1 = {
+                x: epochs,
+                y: performance.samples_per_second || [],
+                name: 'Samples/sec',
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: '#10b981', width: 2 },
+                marker: { size: 4 }
+            };
+
+            const speedTrace2 = {
+                x: epochs,
+                y: performance.epoch_durations || [],
+                name: 'Epoch Time (s)',
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: '#f59e0b', width: 2 },
+                marker: { size: 4 },
+                yaxis: 'y2'
+            };
+
+            const speedLayout = {
+                title: {
+                    text: 'Training Speed',
+                    font: { size: isMobile ? 12 : 14 }
+                },
+                xaxis: { 
+                    title: { 
+                        text: 'Epoch',
+                        font: { size: isMobile ? 10 : 12 }
+                    },
+                    tickfont: { size: isMobile ? 9 : 11 }
+                },
+                yaxis: { 
+                    title: { 
+                        text: 'Samples/sec',
+                        font: { size: isMobile ? 10 : 12 }
+                    },
+                    tickfont: { size: isMobile ? 9 : 11 },
+                    side: 'left'
+                },
+                yaxis2: {
+                    title: { 
+                        text: 'Time (s)',
+                        font: { size: isMobile ? 10 : 12 }
+                    },
+                    tickfont: { size: isMobile ? 9 : 11 },
+                    overlaying: 'y',
+                    side: 'right'
+                },
+                margin: { 
+                    t: isMobile ? 30 : 35,
+                    l: isMobile ? 45 : 55,
+                    r: isMobile ? 45 : 55,
+                    b: isMobile ? 35 : 40
+                },
+                showlegend: true,
+                legend: {
+                    x: 0,
+                    y: 1,
+                    font: { size: isMobile ? 9 : 11 },
+                    bgcolor: 'rgba(255,255,255,0.8)'
+                },
+                dragmode: isMobile ? 'pan' : 'zoom',
+                scrollZoom: !isMobile
+            };
+
+            const speedConfig = {
+                responsive: true,
+                displayModeBar: !isMobile,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                displaylogo: false
+            };
+
+            Plotly.react('speedPlot', [speedTrace1, speedTrace2], speedLayout, speedConfig);
+
+            // Resource Usage Plot
+            const resourceTrace1 = {
+                x: epochs,
+                y: performance.memory_usage || [],
+                name: 'Memory (MB)',
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: '#8b5cf6', width: 2 },
+                marker: { size: 4 }
+            };
+
+            const resourceTrace2 = {
+                x: epochs,
+                y: performance.learning_rates || [],
+                name: 'Learning Rate',
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: '#ef4444', width: 2 },
+                marker: { size: 4 },
+                yaxis: 'y2'
+            };
+
+            const resourceLayout = {
+                title: {
+                    text: 'Resource Usage',
+                    font: { size: isMobile ? 12 : 14 }
+                },
+                xaxis: { 
+                    title: { 
+                        text: 'Epoch',
+                        font: { size: isMobile ? 10 : 12 }
+                    },
+                    tickfont: { size: isMobile ? 9 : 11 }
+                },
+                yaxis: { 
+                    title: { 
+                        text: 'Memory (MB)',
+                        font: { size: isMobile ? 10 : 12 }
+                    },
+                    tickfont: { size: isMobile ? 9 : 11 },
+                    side: 'left'
+                },
+                yaxis2: {
+                    title: { 
+                        text: 'Learning Rate',
+                        font: { size: isMobile ? 10 : 12 }
+                    },
+                    tickfont: { size: isMobile ? 9 : 11 },
+                    overlaying: 'y',
+                    side: 'right',
+                    type: 'log'
+                },
+                margin: { 
+                    t: isMobile ? 30 : 35,
+                    l: isMobile ? 45 : 55,
+                    r: isMobile ? 45 : 55,
+                    b: isMobile ? 35 : 40
+                },
+                showlegend: true,
+                legend: {
+                    x: 0,
+                    y: 1,
+                    font: { size: isMobile ? 9 : 11 },
+                    bgcolor: 'rgba(255,255,255,0.8)'
+                },
+                dragmode: isMobile ? 'pan' : 'zoom',
+                scrollZoom: !isMobile
+            };
+
+            const resourceConfig = {
+                responsive: true,
+                displayModeBar: !isMobile,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                displaylogo: false
+            };
+
+            Plotly.react('resourcePlot', [resourceTrace1, resourceTrace2], resourceLayout, resourceConfig);
+        }
+
+        function formatValue(value) {
+            if (Array.isArray(value)) {
+                return value.join(', ');
+            } else if (typeof value === 'number') {
+                return value.toString().includes('.') ? value.toFixed(6) : value;
+            }
+            return value;
+        }
+
+        function createConfigList(config, containerId) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            Object.entries(config).forEach(([key, value]) => {
+                const row = document.createElement('div');
+                row.className = 'mb-2 flex flex-col sm:flex-row sm:justify-between';
+
+                const label = document.createElement('span');
+                label.className = 'font-semibold text-gray-700 text-xs sm:text-sm';
+                label.textContent = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+                const valueSpan = document.createElement('span');
+                valueSpan.className = 'text-gray-900 text-xs sm:text-sm break-all';
+                valueSpan.textContent = formatValue(value);
+
+                row.appendChild(label);
+                row.appendChild(valueSpan);
+                container.appendChild(row);
+            });
+        }
+
+        function updateMetrics(data) {
+            const history = data.training_history;
+            const lastEpoch = history.epochs[history.epochs.length - 1] || '-';
+            const lastTrainLoss = history.train_losses[history.train_losses.length - 1]?.toFixed(6) || '-';
+            const lastValLoss = history.val_losses[history.val_losses.length - 1]?.toFixed(6) || '-';
+            const bestValLoss = history.best_val_loss?.toFixed(6) || '-';
+
+            // Update model name and status
+            const modelName = data.model_name || '-';
+            document.getElementById('modelName').textContent = modelName.toUpperCase();
+
+            const isTraining = history.epochs.length > 0 && !history.stopped_early;
+            const statusText = isTraining ?
+                `Training - Epoch ${lastEpoch}/${data.training_config.num_epochs}` :
+                history.stopped_early ?
+                    `Complete - Early stopped at epoch ${history.early_stopping_epoch}` :
+                    'Not training';
+            document.getElementById('modelStatus').textContent = statusText;
+
+            document.getElementById('currentEpoch').textContent = lastEpoch;
+            document.getElementById('bestValLoss').textContent = bestValLoss;
+            document.getElementById('currentTrainLoss').textContent = lastTrainLoss;
+            document.getElementById('currentValLoss').textContent = lastValLoss;
+
+            // Update performance metrics
+            const performance = data.performance || {};
+            const avgEpochTime = performance.avg_epoch_time ? `${performance.avg_epoch_time.toFixed(1)}s` : '-';
+            const lastSamplesPerSec = performance.samples_per_second && performance.samples_per_second.length > 0 ? 
+                performance.samples_per_second[performance.samples_per_second.length - 1].toFixed(0) : '-';
+            
+            document.getElementById('avgEpochTime').textContent = avgEpochTime;
+            document.getElementById('samplesPerSec').textContent = lastSamplesPerSec;
+
+            createConfigList(data.model_config, 'modelConfigList');
+            createConfigList(data.training_config, 'trainingConfigList');
+
+            if (history.epochs.length > 0) {
+                updatePlot(history.epochs, history.train_losses, history.val_losses);
+                updatePerformancePlots(history.epochs, data.performance);
+            }
+        }
+
+        function fetchTrainingStatus() {
+            fetch('/api/training-status')
+                .then(response => response.json())
+                .then(data => {
+                    updateMetrics(data);
+                })
+                .catch(error => console.error('Error fetching training status:', error));
+        }
+
+        // Handle window resize for plot responsiveness
+        window.addEventListener('resize', function() {
+            // Debounce resize events
+            clearTimeout(window.resizeTimeout);
+            window.resizeTimeout = setTimeout(function() {
+                // Trigger plot update if data exists
+                fetchTrainingStatus();
+            }, 250);
+        });
+
+        // Initial fetch and setup periodic updates
+        fetchTrainingStatus();
+        setInterval(fetchTrainingStatus, 1000);
+
+        // Prevent zoom on double tap for better mobile experience
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function (event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+    </script>
+</body>
+
+</html>

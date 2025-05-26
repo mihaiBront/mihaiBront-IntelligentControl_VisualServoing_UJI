@@ -175,4 +175,3 @@ cython_debug/
 outputs/
 **/outputs/
 training_generation
-training_models

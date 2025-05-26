@@ -7,13 +7,15 @@ import os
 from tqdm import tqdm
 
 class IBVSDataset(Dataset):
-    def __init__(self, data_path, sequence_length=1, feature_cols=None, target_cols=None):
+    def __init__(self, data_path, sequence_length=1, feature_cols=None, target_cols=None, feature_scaler=None, target_scaler=None):
         """
         Args:
             data_path (str): Path to the CSV file with IBVS data
             sequence_length (int): Length of sequence for RNN-based models
             feature_cols (list): List of column names for features
             target_cols (list): List of column names for targets
+            feature_scaler (StandardScaler): Pre-fitted scaler for features
+            target_scaler (StandardScaler): Pre-fitted scaler for targets
         """
         self.sequence_length = sequence_length
         
@@ -33,8 +35,9 @@ class IBVSDataset(Dataset):
             print(f"Using default feature columns: {feature_cols}")
             
         if target_cols is None:
-            target_cols = ['vx', 'vy', 'vz', 'wx', 'wy', 'wz']
+            target_cols = ['vx', 'vy', 'vz']  # Only linear velocities since angular are essentially zero
             print(f"Using default target columns: {target_cols}")
+            print("Note: Angular velocities (wx, wy, wz) excluded as they contain only numerical noise")
         
         # Verify columns exist
         missing_features = [col for col in feature_cols if col not in self.data.columns]
@@ -53,17 +56,26 @@ class IBVSDataset(Dataset):
         self.features = self.data[feature_cols].values
         self.targets = self.data[target_cols].values
         
-        # Normalize the data
-        self.feature_scaler = StandardScaler()
-        self.target_scaler = StandardScaler()
+        # Use provided scalers or create new ones
+        self.feature_scaler = feature_scaler if feature_scaler is not None else StandardScaler()
+        self.target_scaler = target_scaler if target_scaler is not None else StandardScaler()
         
-        self.features = self.feature_scaler.fit_transform(self.features)
-        self.targets = self.target_scaler.fit_transform(self.targets)
+        # Fit and transform if scalers are new
+        if feature_scaler is None:
+            self.features = self.feature_scaler.fit_transform(self.features)
+        else:
+            self.features = self.feature_scaler.transform(self.features)
+            
+        if target_scaler is None:
+            self.targets = self.target_scaler.fit_transform(self.targets)
+        else:
+            self.targets = self.target_scaler.transform(self.targets)
         
         print(f"\nDataset loaded successfully:")
         print(f"- Number of samples: {len(self.data)}")
         print(f"- Feature shape: {self.features.shape}")
-        print(f"- Target shape: {self.targets.shape}\n")
+        print(f"- Target shape: {self.targets.shape}")
+        print()
         
     def __len__(self):
         return len(self.features) - self.sequence_length + 1
@@ -78,12 +90,25 @@ class IBVSDataset(Dataset):
             # For non-RNN models
             return torch.FloatTensor(self.features[idx]), torch.FloatTensor(self.targets[idx])
 
-def prepare_dataloaders(data_path, batch_size=32, sequence_length=1, val_split=0.2):
+def prepare_dataloaders(data_path, batch_size=32, sequence_length=1, val_split=0.2, feature_scaler=None, target_scaler=None):
     """
     Prepare train and validation dataloaders
+    
+    Args:
+        data_path (str): Path to the CSV file with IBVS data
+        batch_size (int): Batch size for training
+        sequence_length (int): Length of sequence for RNN-based models
+        val_split (float): Fraction of data to use for validation
+        feature_scaler (StandardScaler): Pre-fitted scaler for features
+        target_scaler (StandardScaler): Pre-fitted scaler for targets
     """
     # Create dataset
-    dataset = IBVSDataset(data_path, sequence_length)
+    dataset = IBVSDataset(
+        data_path,
+        sequence_length=sequence_length,
+        feature_scaler=feature_scaler,
+        target_scaler=target_scaler
+    )
     
     # Split into train and validation
     train_size = int((1 - val_split) * len(dataset))

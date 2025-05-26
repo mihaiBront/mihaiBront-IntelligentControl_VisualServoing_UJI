@@ -4,6 +4,8 @@ import numpy as np
 from machinevisiontoolbox import IBVS
 from spatialmath import SE3
 import logging as log
+import torch
+import json
 
 class IBVSMachineLearning(IBVS):
     """
@@ -11,44 +13,60 @@ class IBVSMachineLearning(IBVS):
     This class inherits from IBVS and replaces the classical control law with a trained model.
     """
     
-    def __init__(self, camera, model_path=None, **kwargs):
+    def __init__(self, camera, P, p_d, model_path, model_type='fnn', graphics=True):
         """
         Initialize the ML-based IBVS controller
         
         Args:
             camera: Camera instance for visual servoing
+            P: Current camera pose
+            p_d: Desired image points
             model_path: Path to the trained model file
-            **kwargs: Additional arguments passed to IBVS parent class
+            model_type: Type of the machine learning model
+            graphics: Whether to use graphics for visualization
         """
-        super().__init__(camera, **kwargs)
-        self.model = None
-        if model_path:
-            self.load_model(model_path)
-            
-    def load_model(self, model_path):
-        """
-        Load the trained machine learning model.
-        This is a placeholder - implement according to your ML framework
-        (e.g., PyTorch, TensorFlow, etc.)
+        super().__init__(camera, P, p_d, graphics)
+        self.model_path = model_path
+        self.model_type = model_type
         
-        Args:
-            model_path: Path to the saved model
-        """
-        try:
-            # HERE: Implement the actual model loading code
-            #
-            # TODO: Replace this with actual model loading code
-            # Example for PyTorch:
-            # self.model = torch.load(model_path)
-            # self.model.eval()
+        # Load model and scalers
+        self.load_model()
             
-            # Example for TensorFlow:
-            # self.model = tf.keras.models.load_model(model_path)
-            
-            log.info(f"Model loaded successfully from {model_path}")
-        except Exception as e:
-            log.error(f"Error loading model: {e}")
-            raise
+    def load_model(self):
+        """Load the trained model and its scalers"""
+        # Import the appropriate trainer class
+        if self.model_type == 'fnn':
+            from model_training.train_fnn import FNNTrainer
+            trainer = FNNTrainer()
+        elif self.model_type == 'lstm':
+            from model_training.train_lstm import LSTMTrainer
+            trainer = LSTMTrainer()
+        elif self.model_type == 'resnet':
+            from model_training.train_resnet import ResNetTrainer
+            trainer = ResNetTrainer()
+        elif self.model_type == 'hybrid':
+            from model_training.train_hybrid import HybridTrainer
+            trainer = HybridTrainer()
+        else:
+            raise ValueError(f"Unknown model type: {self.model_type}")
+        
+        # Create model architecture
+        self.model = trainer.create_model()
+        
+        # Load model weights
+        model_state = torch.load(f"{self.model_path}/{self.model_type}_best.pth")
+        self.model.load_state_dict(model_state)
+        self.model.eval()
+        
+        # Load metadata to get scaler paths
+        with open(f"{self.model_path}/{self.model_type}_metadata.json", 'r') as f:
+            metadata = json.load(f)
+        
+        # Load scalers
+        trainer.training_metadata = metadata
+        trainer.load_scalers()
+        self.feature_scaler = trainer.feature_scaler
+        self.target_scaler = trainer.target_scaler
             
     def prepare_input_features(self, current_points, desired_points, depth=None):
         """
@@ -76,11 +94,51 @@ class IBVSMachineLearning(IBVS):
             else:
                 depth_values = np.array(depth)
             features = np.concatenate([features, depth_values])
-            
-        # TODO: Add any additional preprocessing needed by your model
-        # (e.g., normalization, scaling, etc.)
+        
+        # Normalize features
+        if self.feature_scaler is not None:
+            features = self.feature_scaler.transform(features.reshape(1, -1))
         
         return features
+    
+    def predict_velocity(self, features):
+        """
+        Predict velocity using the ML model
+        
+        Args:
+            features: Normalized input features
+            
+        Returns:
+            Predicted velocity command
+        """
+        # Convert to tensor
+        features_tensor = torch.FloatTensor(features)
+        
+        # Get model prediction
+        with torch.no_grad():
+            prediction = self.model(features_tensor)
+        
+        # Denormalize prediction
+        if self.target_scaler is not None:
+            prediction = self.target_scaler.inverse_transform(prediction.numpy())
+            
+        return prediction.flatten()
+    
+    def update_velocity(self):
+        """
+        Update the camera velocity using the ML model
+        """
+        # Get current feature points
+        current_points = self.camera.project_point(P=self.P, pose=self.camera.pose)
+        
+        # Prepare input features
+        features = self.prepare_input_features(current_points, self.p_star)
+        
+        # Get velocity prediction
+        velocity = self.predict_velocity(features)
+        
+        # Update camera velocity
+        self.camera.set_velocity(velocity)
         
     def step(self, t):
         """
