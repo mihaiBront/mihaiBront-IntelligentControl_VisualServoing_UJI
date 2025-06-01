@@ -1137,23 +1137,22 @@ class IBVSMachineLearning(IBVS):
         super().__init__(camera=camera, P=P, p_d=p_d, graphics=graphics)
         
         # Load trained ML model components
-        self.load_model(model_path)
-        self.sequence_buffer = deque(maxlen=10)  # For LSTM temporal processing
+        self.load_model()
 ```
 
 **Key Features:**
 - **Direct Model Loading**: Loads `lstm_best.pth` weights without requiring training libraries
 - **Scaler Integration**: Automatically loads and applies feature/target scalers for data normalization
-- **Temporal Processing**: Maintains sequence buffer for LSTM temporal dynamics
+- **Single-step Processing**: Processes individual control steps using current image features
 - **Drop-in Replacement**: Compatible with existing IBVS interface and control loops
 
 #### 6.1.2 Model Loading and Architecture
 
 **Automatic Model Configuration:**
 ```python
-def load_model(self, model_path):
+def load_model(self):
     # Load model metadata for architecture configuration
-    metadata = json.load(open(f"{model_path}/lstm_metadata.json"))
+    metadata = json.load(open(f"{self.model_path}/lstm_metadata.json"))
     config = metadata['model_config']
     
     # Create LSTM architecture matching training
@@ -1168,9 +1167,9 @@ def load_model(self, model_path):
 
 **LSTM Architecture Details:**
 - **Input Processing**: 8 current image point coordinates (flattened from 4 points × 2 coordinates)
-- **Temporal Modeling**: 2-layer LSTM with 64 hidden units and 20% dropout
+- **Network Structure**: 2-layer LSTM with 64 hidden units and 20% dropout
 - **Output Generation**: Fully connected layers (64→32→3) producing linear velocities
-- **Sequence Processing**: 10-timestep sequences for temporal consistency
+- **Single-step Inference**: Model processes individual timesteps (sequence dimension added internally)
 
 **Data Normalization Pipeline:**
 ```python
@@ -1188,27 +1187,45 @@ velocity_command = self.target_scaler.inverse_transform(velocity_scaled)
 
 **Control Loop Implementation:**
 ```python
-def control(self, camera, p_d):
-    # Get current image features (8 values: 4 points × 2 coordinates)
-    current_features = self.camera.project(self.P).flatten()
+def step(self, t):
+    """Compute one timestep of ML-based IBVS simulation"""
+    # Get current image feature points
+    current_points = self.camera.project_point(self.P)
     
-    # Add to sequence buffer for temporal processing
-    self.sequence_buffer.append(current_features)
+    # Prepare input features for the model (8 values: 4 points × 2 coordinates)
+    current_features = current_points.flatten(order='F')
+    features = current_features.astype(np.float64)
     
-    # Generate velocity command using trained LSTM
-    if len(self.sequence_buffer) >= 10:  # Minimum sequence length
-        velocity_command = self.predict_velocity()
-    else:
-        velocity_command = np.zeros(6)  # Safe fallback during initialization
+    # Normalize features using loaded scaler
+    if self.feature_scaler is not None:
+        features = self.feature_scaler.transform(features.reshape(1, -1)).flatten()
     
-    return velocity_command
+    # Convert to tensor and predict velocity
+    features_tensor = torch.FloatTensor(features).unsqueeze(0)  # Add batch dimension
+    with torch.no_grad():
+        prediction = self.model(features_tensor)
+    
+    # Denormalize prediction and format output
+    if self.target_scaler is not None:
+        prediction_np = prediction.cpu().numpy()
+        v_linear = self.target_scaler.inverse_transform(prediction_np).flatten()
+        v = np.concatenate([v_linear, np.zeros(3)])  # [vx, vy, vz, 0, 0, 0]
+    
+    # Update camera pose and history
+    Td = SE3.Delta(v)
+    self.camera.pose @= Td
+    
+    return status  # 0: running, 1: completed, -1: error
 ```
 
 **Key Implementation Details:**
-- **Feature Extraction**: Projects 3D world points to 2D image coordinates
-- **Sequence Management**: Maintains sliding window of recent observations  
-- **Safe Initialization**: Handles startup period when sequence buffer is incomplete
+- **Single-step Processing**: Processes individual timesteps rather than sequences
+- **Feature Extraction**: Uses `camera.project_point(self.P)` to get current 2D image coordinates
+- **Input Format**: Flattens 4 points × 2 coordinates to 8-element feature vector
+- **Normalization Pipeline**: Applies feature scaling for consistent input range
 - **Output Formatting**: Converts 3DOF ML output (vx,vy,vz) to 6DOF format (padding with zeros)
+- **Pose Integration**: Updates camera pose using SE3.Delta transformation
+- **History Tracking**: Maintains simulation history for analysis and visualization
 
 ### 6.2 Performance Comparison Framework
 
