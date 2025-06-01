@@ -5,6 +5,8 @@ from machinevisiontoolbox import IBVS
 from spatialmath import SE3
 import logging as log
 import torch
+import torch.nn as nn
+import pickle
 import json
 
 class IBVSMachineLearning(IBVS):
@@ -13,7 +15,7 @@ class IBVSMachineLearning(IBVS):
     This class inherits from IBVS and replaces the classical control law with a trained model.
     """
     
-    def __init__(self, camera, P, p_d, model_path, model_type='fnn', graphics=True):
+    def __init__(self, camera, P, p_d, model_path, graphics=True):
         """
         Initialize the ML-based IBVS controller
         
@@ -22,123 +24,95 @@ class IBVSMachineLearning(IBVS):
             P: Current camera pose
             p_d: Desired image points
             model_path: Path to the trained model file
-            model_type: Type of the machine learning model
             graphics: Whether to use graphics for visualization
         """
-        super().__init__(camera, P, p_d, graphics)
+        # Store ML-specific parameters first
         self.model_path = model_path
-        self.model_type = model_type
         
-        # Load model and scalers
+        # Call parent constructor with exact same parameters as classical IBVS
+        super().__init__(camera, P=P, p_d=p_d, graphics=graphics)
+        
+        # Load model and scalers after parent initialization
         self.load_model()
             
     def load_model(self):
         """Load the trained model and its scalers"""
-        # Import the appropriate trainer class
-        if self.model_type == 'fnn':
-            from model_training.train_fnn import FNNTrainer
-            trainer = FNNTrainer()
-        elif self.model_type == 'lstm':
-            from model_training.train_lstm import LSTMTrainer
-            trainer = LSTMTrainer()
-        elif self.model_type == 'resnet':
-            from model_training.train_resnet import ResNetTrainer
-            trainer = ResNetTrainer()
-        elif self.model_type == 'hybrid':
-            from model_training.train_hybrid import HybridTrainer
-            trainer = HybridTrainer()
-        else:
-            raise ValueError(f"Unknown model type: {self.model_type}")
-        
-        # Create model architecture
-        self.model = trainer.create_model()
-        
-        # Load model weights
-        model_state = torch.load(f"{self.model_path}/{self.model_type}_best.pth")
-        self.model.load_state_dict(model_state)
-        self.model.eval()
-        
-        # Load metadata to get scaler paths
-        with open(f"{self.model_path}/{self.model_type}_metadata.json", 'r') as f:
-            metadata = json.load(f)
-        
-        # Load scalers
-        trainer.training_metadata = metadata
-        trainer.load_scalers()
-        self.feature_scaler = trainer.feature_scaler
-        self.target_scaler = trainer.target_scaler
+        try:
+            # Load metadata to get model configuration
+            with open(f"{self.model_path}/lstm_metadata.json", 'r') as f:
+                metadata = json.load(f)
             
-    def prepare_input_features(self, current_points, desired_points, depth=None):
-        """
-        Prepare the input features for the ML model
-        
-        Args:
-            current_points: Current image points (2xN array)
-            desired_points: Desired image points (2xN array)
-            depth: Optional depth values
+            model_config = metadata['model_config']
+            print(f"Loading LSTM model with config: {model_config}")
             
-        Returns:
-            Processed input features as expected by the ML model
-        """
-        # Flatten the points in column-major order (F)
-        current_features = current_points.flatten(order='F')
-        desired_features = desired_points.flatten(order='F')
-        
-        # Combine features
-        features = np.concatenate([current_features, desired_features])
-        
-        # Add depth if available
-        if depth is not None:
-            if np.isscalar(depth):
-                depth_values = np.full(current_points.shape[1], depth)
-            else:
-                depth_values = np.array(depth)
-            features = np.concatenate([features, depth_values])
-        
-        # Normalize features
-        if self.feature_scaler is not None:
-            features = self.feature_scaler.transform(features.reshape(1, -1))
-        
-        return features
-    
-    def predict_velocity(self, features):
-        """
-        Predict velocity using the ML model
-        
-        Args:
-            features: Normalized input features
+            # Define LSTM model architecture with actual parameters
+            class LSTMModel(nn.Module):
+                def __init__(self, input_size, hidden_size, num_layers, output_size, dropout_rate=0.0):
+                    super(LSTMModel, self).__init__()
+                    self.hidden_size = hidden_size
+                    self.num_layers = num_layers
+                    self.lstm = nn.LSTM(input_size, hidden_size, num_layers, 
+                                      batch_first=True, dropout=dropout_rate if num_layers > 1 else 0.0)
+                    
+                    # Fully connected head matching the saved model structure
+                    self.fc = nn.Sequential(
+                        nn.Linear(hidden_size, 32),  # 64 → 32
+                        nn.ReLU(),
+                        nn.Dropout(dropout_rate),    # 0.2 dropout
+                        nn.Linear(32, output_size)   # 32 → 3
+                    )
+                    
+                def forward(self, x):
+                    # Add sequence dimension if not present
+                    if len(x.shape) == 2:
+                        x = x.unsqueeze(1)  # Add sequence dimension
+                    
+                    h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+                    c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size)
+                    
+                    out, _ = self.lstm(x, (h0, c0))
+                    out = self.fc(out[:, -1, :])  # Take last output
+                    return out
             
-        Returns:
-            Predicted velocity command
-        """
-        # Convert to tensor
-        features_tensor = torch.FloatTensor(features)
-        
-        # Get model prediction
-        with torch.no_grad():
-            prediction = self.model(features_tensor)
-        
-        # Denormalize prediction
-        if self.target_scaler is not None:
-            prediction = self.target_scaler.inverse_transform(prediction.numpy())
+            # Create model instance with actual parameters
+            self.model = LSTMModel(
+                input_size=model_config['input_size'],
+                hidden_size=model_config['hidden_size'],
+                num_layers=model_config['num_layers'],
+                output_size=model_config['output_size'],
+                dropout_rate=model_config.get('dropout_rate', 0.0)
+            )
+            print("Model architecture created successfully")
             
-        return prediction.flatten()
-    
-    def update_velocity(self):
-        """
-        Update the camera velocity using the ML model
-        """
-        # Get current feature points
-        current_points = self.camera.project_point(P=self.P, pose=self.camera.pose)
-        
-        # Prepare input features
-        features = self.prepare_input_features(current_points, self.p_star)
-        
-        # Get velocity prediction
-        velocity = self.predict_velocity(features)
-        
-        # Update camera velocity
-        self.camera.set_velocity(velocity)
+            # Load model weights
+            model_path = f"{self.model_path}/lstm_best.pth"
+            print(f"Loading model weights from: {model_path}")
+            state_dict = torch.load(model_path, map_location='cpu')
+            print(f"State dict keys: {list(state_dict.keys())}")
+            self.model.load_state_dict(state_dict)
+            self.model.eval()
+            print("Model weights loaded successfully")
+            
+            # Load scalers
+            print("Loading feature scaler...")
+            with open(f"{self.model_path}/lstm_feature_scaler.pkl", 'rb') as f:
+                self.feature_scaler = pickle.load(f)
+                
+            print("Loading target scaler...")
+            with open(f"{self.model_path}/lstm_target_scaler.pkl", 'rb') as f:
+                self.target_scaler = pickle.load(f)
+                
+            print("Scalers loaded successfully")
+                
+        except FileNotFoundError as e:
+            print(f"FileNotFoundError: {e}")
+            raise FileNotFoundError(f"Model files not found: {e}")
+        except Exception as e:
+            print(f"Exception during model loading: {e}")
+            print(f"Exception type: {type(e)}")
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"Error loading model: {e}")
         
     def step(self, t):
         """
@@ -157,28 +131,36 @@ class IBVSMachineLearning(IBVS):
             current_points = self.camera.project_point(self.P)
             
             # Prepare input features for the model
-            features = self.prepare_input_features(
-                current_points, 
-                self.p_star,
-                self.depth if hasattr(self, 'depth') else None
-            )
+            current_features = current_points.flatten(order='F')
+            # Based on metadata, model expects only current features (8 values), not desired features
+            features = current_features
             
-            if self.model is None:
-                raise ValueError("No model loaded. Call load_model() first.")
+            # Ensure features are float64 for scaler compatibility
+            features = features.astype(np.float64)
+            
+            # Normalize features
+            if self.feature_scaler is not None:
+                features = self.feature_scaler.transform(features.reshape(1, -1))
+                # Scaler output is already 2D (1, n_features)
+                features = features.flatten()
+            
+            # Convert to tensor with proper shape and type
+            features_tensor = torch.FloatTensor(features).unsqueeze(0)  # Add batch dimension
+            
+            with torch.no_grad():
+                prediction = self.model(features_tensor)
+            
+            # Denormalize prediction
+            if self.target_scaler is not None:
+                # Ensure prediction is numpy array and reshape for scaler
+                prediction_np = prediction.cpu().numpy()
+                v_linear = self.target_scaler.inverse_transform(prediction_np).flatten()
                 
-            # TODO: Replace this with actual model inference
-            # Example for PyTorch:
-            # with torch.no_grad():
-            #     features_tensor = torch.FloatTensor(features)
-            #     v = self.model(features_tensor).numpy()
-            
-            # HERE: Implement the actual model inference code
-            #
-            # Example for TensorFlow:
-            # v = self.model.predict(features.reshape(1, -1))[0]
-            
-            # For now, using a placeholder
-            v = np.zeros(6)  # Replace this with actual model prediction
+                # Model outputs only linear velocities (3 values), so pad with zeros for angular
+                v = np.concatenate([v_linear, np.zeros(3)])  # [vx, vy, vz, 0, 0, 0]
+            else:
+                v_linear = prediction.cpu().numpy().flatten()
+                v = np.concatenate([v_linear, np.zeros(3)])  # [vx, vy, vz, 0, 0, 0]
             
             # Update the camera pose using the predicted velocity
             Td = SE3.Delta(v)
